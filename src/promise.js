@@ -4,89 +4,83 @@ const PROMISE_STATUS = {
   REJECTED: Symbol('rejected')
 };
 
-function isFn(fn) {
-  return typeof fn === 'function';
+class Handler {
+  constructor(p) {
+    this.promise = p;
+  }
+
+  get status() {
+    return this.promise.status;
+  }
+
+  setHandlers(onFullfiled, nextFullfiled, onRejected, nextRejected) {
+    this.onFullfiled = onFullfiled;
+    this.nextFullfiled = nextFullfiled;
+    this.onRejected = onRejected;
+    this.nextRejected = nextRejected;
+  }
+
+  unwind() {
+    if (this.onFullfiled === undefined || !this.arg) {
+      return;
+    }
+    let {onFullfiled, nextFullfiled, onRejected, nextRejected} = this;
+    function next(x) {
+      if (x instanceof P) {
+        x.then(nextFullfiled, nextRejected);
+      } else {
+        nextFullfiled(x);
+      }
+    }
+    if (this.status === PROMISE_STATUS.FULFILLED) {
+      if (onFullfiled) {
+        next(onFullfiled(this.arg));
+      } else {
+        next();
+      }
+    }
+    if (this.status === PROMISE_STATUS.REJECTED) {
+      if (onRejected) {
+        next(onRejected(this.arg));
+      } else {
+        nextRejected(this.arg);
+      }
+    }
+  }
 }
 
 class P {
   constructor(executor) {
     this.status = PROMISE_STATUS.PENDING;
-    this.resolve = this.reject = this.resolveArg = this.rejectArg = void 0;
-    this.nextResolve = this.nextReject = this.nextResolveArg = void 0;
+    this.h = new Handler(this);
+    this.execResolve = arg => {
+      setTimeout(() => {
+        this.status = PROMISE_STATUS.FULFILLED;
+        this.h.arg = arg;
+        this.h.unwind();
+      });
+    };
+    this.execReject = arg => {
+      setTimeout(() => {
+        this.status = PROMISE_STATUS.REJECTED;
+        this.h.arg = arg;
+        this.h.unwind();
+      });
+    };
     try {
-      executor(
-        arg => {
-          setTimeout(() => {
-            this.status = PROMISE_STATUS.FULFILLED;
-            this.resolveArg = arg;
-            this.callResolve();
-            this.callNextResolve();
-          });
-        },
-        arg => {
-          setTimeout(() => {
-            this.status = PROMISE_STATUS.REJECTED;
-            this.rejectArg = arg;
-            this.callReject();
-            this.callNextResolve();
-          });
-        }
-      );
+      executor(this.execResolve, this.execReject);
     } catch (err) {
       this.status = PROMISE_STATUS.REJECTED;
-      this.rejectArg = err;
-      this.callReject();
-      this.callNextReject();
+      this.h.arg = err;
+      this.h.unwind();
     }
   }
 
-  callResolve() {
-    if (!isFn(this.resolve)) {
-      return;
-    }
-    this.nextResolveArg = this.resolve.call(null, this.resolveArg);
-  }
-
-  callReject() {
-    if (!isFn(this.reject)) {
-      return;
-    }
-    this.nextResolveArg = this.reject.call(null, this.rejectArg);
-  }
-
-  callNextResolve() {
-    if (!isFn(this.nextResolve)) {
-      return;
-    }
-    if (this.nextResolveArg instanceof P) {
-      this.nextResolveArg.then(this.nextResolve, this.nextReject);
-    } else {
-      this.nextResolve(this.nextResolveArg);
-    }
-  }
-
-  callNextReject() {
-    if (!isFn(this.nextReject)) {
-      return;
-    }
-    this.nextReject(this.nextRejectArg);
-  }
-
-  then(resolve, reject) {
-    this.resolve = resolve;
-    this.reject = reject;
+  then(onFullfiled, onRejected) {
     const p = new P((resolve, reject) => {
-      this.nextResolve = resolve;
-      this.nextReject = reject;
+      this.h.setHandlers(onFullfiled, resolve, onRejected, reject);
     });
-    if (this.status === PROMISE_STATUS.FULFILLED) {
-      this.callResolve();
-      this.callNextResolve();
-    }
-    if (this.status === PROMISE_STATUS.REJECTED) {
-      this.callReject();
-      this.callNextResolve();
-    }
+    this.h.unwind();
     return p;
   }
 

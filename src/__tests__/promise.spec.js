@@ -153,33 +153,37 @@ describe('promise', () => {
     });
   });
 
-  describe('return promise in handler', () => {
-    let p;
-
-    beforeEach(() => {
-      p = new P(resolve => {
-        resolve(1);
-      });
+  test('pass through uncaught error', done => {
+    const p = new P(() => {
+      throw new Error('mew');
     });
+    p.then(() => {}).catch(err => {
+      expect(err.message).toBe('mew');
+      done();
+    });
+  });
+
+  describe('return promise in handler', () => {
+    const a = P.resolve(1);
 
     test('fulfilled promise', done => {
-      const q = new P(resolve => {
-        resolve(2);
-      });
-      p.then(() => q).then(n => {
+      const b = P.resolve(2);
+      a.then(() => b).then(n => {
         expect(n).toBe(2);
         done();
       });
     });
 
-    test('rejected promise', done => {
-      const r = new P((resolve, reject) => {
-        reject(3);
-      });
-      p.then(() => r).catch(n => {
-        expect(n).toBe(3);
-        done();
-      });
-    });
+    test(
+      'rejected promise',
+      done => {
+        const b = P.reject(2);
+        a.then(() => b).catch(n => {
+          expect(n).toBe(2);
+          done();
+        });
+      },
+      100
+    );
   });
 });
