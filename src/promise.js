@@ -97,4 +97,73 @@ class P {
 
 P.STATUS = PROMISE_STATUS;
 
+P.resolve = function(value) {
+  return new P(resolve => resolve(value));
+};
+
+P.reject = function(reason) {
+  return new P((resolve, reject) => reject(reason));
+};
+
+function promisifyIterable(iterable) {
+  return iterable.map(p => {
+    if (p instanceof P) {
+      return p;
+    }
+    if (typeof p === 'string' || typeof p === 'number') {
+      return P.resolve(p);
+    } else {
+      return P.resolve();
+    }
+  });
+}
+
+P.all = function(iterable) {
+  return new P((resolve, reject) => {
+    const ret = Array(iterable.length);
+    let resolved = 0;
+    let rejected = false;
+    promisifyIterable(iterable).forEach((p, index) => {
+      p.then(
+        a => {
+          ret[index] = a;
+          if (++resolved === ret.length) {
+            resolve(ret);
+          }
+        },
+        b => {
+          if (!rejected) {
+            rejected = true;
+            reject(b);
+          }
+        }
+      );
+    });
+  });
+};
+
+P.race = function(iterable) {
+  return new P((resolve, reject) => {
+    const ret = Array(iterable.length);
+    let resolved = false;
+    let rejected = false;
+    promisifyIterable(iterable).forEach((p, index) => {
+      p.then(
+        a => {
+          if (!resolved && !rejected) {
+            resolved = true;
+            resolve(a);
+          }
+        },
+        b => {
+          if (!resolved && !rejected) {
+            rejected = true;
+            reject(b);
+          }
+        }
+      );
+    });
+  });
+};
+
 module.exports = P;
