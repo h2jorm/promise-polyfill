@@ -4,16 +4,27 @@ const PROMISE_STATUS = {
   REJECTED: Symbol('rejected')
 };
 
+function isFn(fn) {
+  return typeof fn === 'function';
+}
+
 class Handler {
   constructor(p) {
     this.promise = p;
+    this.arg = undefined;
+    this.handlersSetted = false;
   }
 
   get status() {
     return this.promise.status;
   }
 
+  setArg(arg) {
+    this.arg = arg;
+  }
+
   setHandlers(onFullfiled, nextFullfiled, onRejected, nextRejected) {
+    this.handlersSetted = true;
     this.onFullfiled = onFullfiled;
     this.nextFullfiled = nextFullfiled;
     this.onRejected = onRejected;
@@ -21,26 +32,26 @@ class Handler {
   }
 
   unwind() {
-    if (this.onFullfiled === undefined || !this.arg) {
+    if (!this.handlersSetted || this.arg === undefined) {
       return;
     }
     let {onFullfiled, nextFullfiled, onRejected, nextRejected} = this;
-    function next(x) {
-      if (x instanceof P) {
-        x.then(nextFullfiled, nextRejected);
+    function next(p) {
+      if (p instanceof P) {
+        p.then(nextFullfiled, nextRejected);
       } else {
-        nextFullfiled(x);
+        nextFullfiled(p);
       }
     }
     if (this.status === PROMISE_STATUS.FULFILLED) {
-      if (onFullfiled) {
+      if (isFn(onFullfiled)) {
         next(onFullfiled(this.arg));
       } else {
         next();
       }
     }
     if (this.status === PROMISE_STATUS.REJECTED) {
-      if (onRejected) {
+      if (isFn(onRejected)) {
         next(onRejected(this.arg));
       } else {
         nextRejected(this.arg);
@@ -56,14 +67,14 @@ class P {
     this.execResolve = arg => {
       setTimeout(() => {
         this.status = PROMISE_STATUS.FULFILLED;
-        this.h.arg = arg;
+        this.h.setArg(arg);
         this.h.unwind();
       });
     };
     this.execReject = arg => {
       setTimeout(() => {
         this.status = PROMISE_STATUS.REJECTED;
-        this.h.arg = arg;
+        this.h.setArg(arg);
         this.h.unwind();
       });
     };
@@ -71,7 +82,7 @@ class P {
       executor(this.execResolve, this.execReject);
     } catch (err) {
       this.status = PROMISE_STATUS.REJECTED;
-      this.h.arg = err;
+      this.h.setArg(err);
       this.h.unwind();
     }
   }
