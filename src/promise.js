@@ -8,15 +8,32 @@ function isFn(fn) {
   return typeof fn === 'function';
 }
 
-class Handler {
-  constructor(p) {
-    this.promise = p;
-    this.arg = undefined;
-    this.handlersSetted = false;
+class P {
+  constructor(executor) {
+    this.status = PROMISE_STATUS.PENDING;
+    try {
+      executor(this.execResolve.bind(this), this.execReject.bind(this));
+    } catch (err) {
+      this.status = PROMISE_STATUS.REJECTED;
+      this.setArg(err);
+      this.next();
+    }
   }
 
-  get status() {
-    return this.promise.status;
+  execResolve(arg) {
+    setTimeout(() => {
+      this.status = PROMISE_STATUS.FULFILLED;
+      this.setArg(arg);
+      this.next();
+    });
+  }
+
+  execReject(arg) {
+    setTimeout(() => {
+      this.status = PROMISE_STATUS.REJECTED;
+      this.setArg(arg);
+      this.next();
+    });
   }
 
   setArg(arg) {
@@ -31,67 +48,39 @@ class Handler {
     this.nextRejected = nextRejected;
   }
 
-  unwind() {
-    if (!this.handlersSetted || this.arg === undefined) {
+  next() {
+    if (!this.handlersSetted || this.status === PROMISE_STATUS.PENDING) {
       return;
     }
-    let {onFullfiled, nextFullfiled, onRejected, nextRejected} = this;
-    function next(p) {
+    const {onFullfiled, nextFullfiled, onRejected, nextRejected} = this;
+    function resolveMaybePromise(p, resolve, reject) {
       if (p instanceof P) {
-        p.then(nextFullfiled, nextRejected);
+        p.then(resolve, reject);
       } else {
-        nextFullfiled(p);
+        resolve(p);
       }
     }
     if (this.status === PROMISE_STATUS.FULFILLED) {
-      if (isFn(onFullfiled)) {
-        next(onFullfiled(this.arg));
-      } else {
-        next();
-      }
+      resolveMaybePromise(
+        isFn(onFullfiled) ? onFullfiled(this.arg) : this.arg,
+        nextFullfiled,
+        nextRejected
+      );
     }
     if (this.status === PROMISE_STATUS.REJECTED) {
       if (isFn(onRejected)) {
-        next(onRejected(this.arg));
+        resolveMaybePromise(onRejected(this.arg), nextFullfiled, nextRejected);
       } else {
-        nextRejected(this.arg);
+        resolveMaybePromise(this.arg, nextRejected, null);
       }
-    }
-  }
-}
-
-class P {
-  constructor(executor) {
-    this.status = PROMISE_STATUS.PENDING;
-    this.h = new Handler(this);
-    this.execResolve = arg => {
-      setTimeout(() => {
-        this.status = PROMISE_STATUS.FULFILLED;
-        this.h.setArg(arg);
-        this.h.unwind();
-      });
-    };
-    this.execReject = arg => {
-      setTimeout(() => {
-        this.status = PROMISE_STATUS.REJECTED;
-        this.h.setArg(arg);
-        this.h.unwind();
-      });
-    };
-    try {
-      executor(this.execResolve, this.execReject);
-    } catch (err) {
-      this.status = PROMISE_STATUS.REJECTED;
-      this.h.setArg(err);
-      this.h.unwind();
     }
   }
 
   then(onFullfiled, onRejected) {
     const p = new P((resolve, reject) => {
-      this.h.setHandlers(onFullfiled, resolve, onRejected, reject);
+      this.setHandlers(onFullfiled, resolve, onRejected, reject);
     });
-    this.h.unwind();
+    this.next();
     return p;
   }
 
